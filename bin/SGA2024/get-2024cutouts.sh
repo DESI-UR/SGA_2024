@@ -7,7 +7,7 @@
 #srun -n 2 -c 128 shifter $HOME/code/git/SGA/bin/SGA2024/get-2024cutouts.sh sga2020-candidates 128 > $SCRATCH/SGA2024/logs/cutouts-candidates.log 2>&1 &
 #srun -n 2 -c 128 shifter $HOME/code/git/SGA/bin/SGA2024/get-2024cutouts.sh skies 128 > $SCRATCH/SGA2024/logs/cutouts-skies.log 2>&1 &
 
-codedir=$HOME/code/git
+codedir=$HOME
 mpiscript=$codedir/SGA/bin/SGA2024/get-2024cutouts
 outdir_data=$SCRATCH/SGA2024
 
@@ -18,6 +18,7 @@ export MPICH_GNI_FORK_MODE=FULLCOPY
 
 catalog_type=$1 # catalog type (sga2020, sga2020-offset, sga2020-missing, sga2024-candidates, skies)
 mp=$2           # number of tasks (cores) per MPI rank
+mb=$3  # whether or not to turn on maskbits 
 
 args="--outdir-data $outdir_data "
 
@@ -26,6 +27,9 @@ if [[ $catalog_type != " " ]] && [[ $catalog_type != "" ]] && [[ $catalog_type !
 fi
 if [[ $mp != " " ]] && [[ $mp != "" ]] && [[ $mp != "-" ]]; then
     args=$args" --mp $mp"
+fi
+if [[ $mb != " " ]] && [[ $mb != "" ]] && [[ $mb != "-" ]]; then
+    args=$args" --maskbits"
 fi
 
 echo $mpiscript $args

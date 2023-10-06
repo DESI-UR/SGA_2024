@@ -32,7 +32,7 @@ def get_raslice(ra):
 def _cutout_one(args):
     return cutout_one(*args)
 
-def cutout_one(basefile, ra, dec, width, pixscale, dry_run, count):
+def cutout_one(basefile, ra, dec, width, pixscale, dry_run, maskbits, count):
     """
     pixscale = 0.262
     width = int(30 / pixscale)   # =114
@@ -48,6 +48,8 @@ def cutout_one(basefile, ra, dec, width, pixscale, dry_run, count):
     for suffix in ['.jpeg', '.fits']:
         outfile = basefile+suffix
         cmd = f'cutout --output={outfile} --ra={ra} --dec={dec} --size={width} --layer=ls-dr9 --pixscale={pixscale} --force'
+        if maskbits:
+            cmd += ' --maskbits'
         if dry_run:
             print(cmd)
         else:
@@ -81,7 +83,7 @@ def get_basefiles_one(obj, outdir_data, overwrite=False, verbose=False):
             if verbose:
                 print(f'Skipping existing object {basefile}.')
 
-    return basefile, obj['RA'], obj['DEC'], nobj
+    return basefile, obj['RA'], obj['DEC'], obj['WIDTH'], nobj
 
 def plan(cat, comm=None, outdir_data='.', mp=1, overwrite=False):
 
@@ -113,7 +115,8 @@ def plan(cat, comm=None, outdir_data='.', mp=1, overwrite=False):
     basefiles = np.array(out[0], dtype=object)
     allra = np.array(out[1], dtype=object)
     alldec = np.array(out[2], dtype=object)
-    nobj = np.array(out[3], dtype=object)
+    allwidth = np.array(out[3], dtype=object)
+    nobj = np.array(out[4], dtype=object)
 
     iempty = np.where(nobj == 0)[0]
     if len(iempty) > 0:
@@ -124,6 +127,7 @@ def plan(cat, comm=None, outdir_data='.', mp=1, overwrite=False):
         basefiles = basefiles[itodo]
         allra = allra[itodo]
         alldec = alldec[itodo]
+        allwidth = allwidth[itodo]
         nobj = nobj[itodo]
 
         print('Missing cutouts for {} objects.'.format(np.sum(nobj)))
@@ -145,7 +149,7 @@ def plan(cat, comm=None, outdir_data='.', mp=1, overwrite=False):
     else:
         groups = [np.array([])]
 
-    return basefiles, allra, alldec, groups
+    return basefiles, allra, alldec, allwidth, groups
 
 def do_cutouts(args, cat, width=152, pixscale=0.262, comm=None, outdir_data='.'):
 
@@ -156,16 +160,17 @@ def do_cutouts(args, cat, width=152, pixscale=0.262, comm=None, outdir_data='.')
 
     t0 = time.time()
     if rank == 0:
-        basefiles, allra, alldec, groups = plan(cat, comm=comm, outdir_data=outdir_data,
-                                                overwrite=args.overwrite, mp=args.mp)
+        basefiles, allra, alldec, allwidth, groups = plan(cat, comm=comm, outdir_data=outdir_data,
+                                                          overwrite=args.overwrite, mp=args.mp)
         print('Planning took {:.2f} sec'.format(time.time() - t0))
     else:
-        basefiles, allra, alldec, groups = [], [], [], []
+        basefiles, allra, alldec, allwidth, groups = [], [], [], [], []
 
     if comm:
         basefiles = comm.bcast(basefiles, root=0)
         allra = comm.bcast(allra, root=0)
         alldec = comm.bcast(alldec, root=0)
+        allwidth = comm.bcast(allwidth, root=0)
         groups = comm.bcast(groups, root=0)
     sys.stdout.flush()
     
@@ -179,7 +184,7 @@ def do_cutouts(args, cat, width=152, pixscale=0.262, comm=None, outdir_data='.')
     sys.stdout.flush()
 
     indx = groups[rank]
-    mpargs = [(basefiles[ii], allra[ii], alldec[ii], width, pixscale, args.dry_run, ii) for ii in indx]
+    mpargs = [(basefiles[ii], allra[ii], alldec[ii], allwidth[ii], pixscale, args.dry_run, args.maskbits, ii) for ii in indx]
     if args.mp > 1:
         with multiprocessing.Pool(args.mp) as P:
             P.map(_cutout_one, mpargs)
@@ -213,6 +218,7 @@ def main():
                                                                       'sga2024-candidates', 'skies'],
                         type=str, help='Catalog type to read and process.')
     parser.add_argument('--outdir-data', default='./', type=str, help='Base output data directory.')
+    parser.add_argument('--maskbits', action='store_true', help='Saves maskbits and appends them in another HDU')
     
     args = parser.parse_args()
 
